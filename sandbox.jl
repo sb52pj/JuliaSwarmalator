@@ -1,34 +1,21 @@
 using Distributed
-const numofprocess = 10
-#const numofprocess = 2
-addprocs(numofprocess)
+const numofprocess = 10  # actual running processes depends on model and memory
+#const numofprocess = 2 # for debugging, just 2 processes
+addprocs(numofprocess)  # distribute
 @everywhere using DifferentialEquations
 @everywhere using Logging: global_logger
 @everywhere using TerminalLoggers: TerminalLogger
 @everywhere include("./rhs.jl")
-@everywhere using .rhs
 @everywhere using Random
-@everywhere using JLD2
 using ProgressMeter
 @everywhere global_logger(TerminalLogger())
 @everywhere using Dates
 @everywhere using NPZ
-# @everywhere global_logger(TerminalLoggers.TerminalLogger())
 
-
-#@everywhere const a, dt, T, n, L = 1.0, 0.5, 21000, 100, 1.0
+# model setting
 @everywhere const a, dt, T, n, L = 1.0, 0.5, 6000, 100, 1.0
 @everywhere const tspan = (0, T)  # Replace t_start and t_end with actual time span
-#@everywhere const scanstep = 10
-#@everywhere const scanstep = 30
 @everywhere const scanstep = 90
-@everywhere sideLength = size(30:scanstep:900)[1]
-#@everywhere const caption = "Julia_correctview_a0a1_32"
-#@everywhere const caption = "Julia_correctview_a0a1_$sideLength"*"α2_β3"
-#@everywhere const caption = "Julia_correctview_a0a1_$sideLength"*"moveright"
-#@everywhere const caption = "Julia_correctview_a0a1_$sideLength"*"AonPhaseR"
-#@everywhere const caption = "Julia_correctview_a0a1_$sideLength"*"originaleuler"
-#@everywhere const caption = "Julia_correctview_a0a1_smallvalue"
 @everywhere const caption = "Julia_correctview_a0a1_randominit"
 @everywhere const savepath = "F:\\xj\\experimentresult\\$caption-n_$n-T_$T\\"
 if !isdir(savepath)
@@ -50,8 +37,6 @@ end
 	time() - timer.tstart[1] >= timer.runtime && return true
     end
 
-
-
 @everywhere function callback_func(sol, t, integrator)
     current_stepsize = integrator.h
     threshold = 0.001
@@ -68,6 +53,7 @@ end
     theta0 = rand(Float64, n) .* (2 * π) .- π
     omega = zeros(Float64, n)
     scalefactor = 0.1
+    # model with natural frequency
     #omega = rand(Float64, n) .* (2 * scalefactor * L) .- L * scalefactor
     
     J, K, a0, a1, loghandle = z
@@ -77,6 +63,8 @@ end
 
     # Initial conditions and parameters
     p = (J, K, n, omega, a0, a1, T)  
+
+    # models to solve
     #prob = ODEProblem(rhs_unit_vector!, z0, tspan, p)
     #prob = ODEProblem(rhs_unit_vector_recover_3D!, z0, tspan, p)
     #prob = ODEProblem(rhs_unit_vector_recover_lorenz!, z0, tspan, p)
@@ -85,6 +73,8 @@ end
     prob = ODEProblem(rhs_unit_vector_randinit!, z0, tspan, p)
     #prob = ODEProblem(rhs_unit_vector_AonPhase!, z0, tspan, p)
     #prob = ODEProblem(rhs_unit_vector_distance_α2_β3!, z0, tspan, p)
+    
+    # drop those parameter that hard to solve temporarily, but seems not working
     timetest = 180
     timelimit = 7200
     function callback_func!(integrator)
@@ -123,6 +113,9 @@ end
     sols = nothing
     prob = nothing    
 end
+
+# actual scanning parameters
+#
 @everywhere const JKs = [(0.1, 1.0), (1.0, 0.0), (1.0, -0.1), (1.0, -0.75), (0.1, -1.0)]
 #@everywhere const JKs = [(1.0, -0.03),(1.0, -0.06),(1.0, -0.09)]
 #@everywhere const JKs = [(0.1, 1.0), (1.0, 0.0), (1.0, -0.1), (1.0, -0.75)]
@@ -153,14 +146,13 @@ println("computing $remain_tasks/$total_tasks tasks in $numofprocess processes")
 
 
 @sync @showprogress @distributed for z in iterparams
-    #if isfile("$savepath\\solution$J-$K-$a0-$a1.jld2")
     J, K, a0, a1, loghandle = z
     filename = "J_$J" * "__K_$K" * "__a0_$a0" * "__a1_$a1.npy"
     if isfile("$savepath\\data\\x_$filename")
         global completed_tasks += 1
         @info("skipped $J $K $a0 $a1 for $T")
     end
-    #println("calculating $J $K $a0 $a1 for $T")
     swarm(z)
+    # gc is essential
     GC.gc(true)
 end
